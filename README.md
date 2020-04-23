@@ -8,6 +8,7 @@ This script will use the following two domains as the basis for identifying the 
 4) A new book is removed from Legends Novels
 
 https://starwars.fandom.com/wiki/List_of_books
+
 https://starwars.fandom.com/wiki/List_of_future_books
 
 When a change is detected it emails the user what was changed.
