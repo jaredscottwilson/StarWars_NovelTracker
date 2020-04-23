@@ -13,6 +13,8 @@ https://starwars.fandom.com/wiki/List_of_future_books
 
 When a change is detected it emails the user what was changed.
 
+In Work:
+- adding the "List of Future books" to the same functionality
 
 Here's an example of the email when Legends content is added
 
