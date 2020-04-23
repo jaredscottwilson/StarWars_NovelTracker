@@ -12,3 +12,5 @@ https://starwars.fandom.com/wiki/List_of_books
 https://starwars.fandom.com/wiki/List_of_future_books
 
 When a change is detected it emails the user what was changed.
+
+![Legends Added Example](https://github.com/jaredscottwilson/Star_Wars_Tracker/blob/master/legends%20added.PNG)
