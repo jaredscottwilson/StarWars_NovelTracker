@@ -1,5 +1,5 @@
 #jared wilson
-	
+
 import requests
 import lxml.html as lh
 import pandas as pd
@@ -12,6 +12,8 @@ from email import encoders
 import config
 import sys
 import os
+import re
+import time
 
 def file_to_list(path):
 	if os.path.exists(path) and os.path.getsize(path) > 0:
@@ -37,18 +39,13 @@ def send_mail(send_body):
 	s.sendmail(config.fromaddr, config.toaddr, text)
 	s.quit()
 	time.sleep(1)
-
-url='https://starwars.fandom.com/wiki/List_of_books'
-running_list = file_to_list(config.working_dir + "currenttotal.txt")
-
-try:
-	response = requests.get(url)
-except:
+    
+def send_error_mail(body):
 	msg = MIMEMultipart()
 	msg['From'] = config.fromaddr
 	msg['To'] = config.toaddr
 	msg['Subject'] = "Star Wars Issue!"
-	body = "There was an issue pulling the website"
+	body = "There was an issue " + body
 	msg.attach(MIMEText(body, 'plain'))
 	s = smtplib.SMTP('smtp.gmail.com', 587)
 	s.ehlo()
@@ -58,82 +55,136 @@ except:
 	s.sendmail(config.fromaddr, config.toaddr, text)
 	s.quit()
 	sys.exit(0)
+   
+def parse_current_collection():
+    URL = 'https://starwars.fandom.com/wiki/List_of_books'
+    running_list = file_to_list(config.working_dir + "currenttotal_released.txt")
+
+    try:
+        response = requests.get(URL)
+    except:
+        send_error_mail("pulling the current collection website.")
 	
+    soup = BeautifulSoup(response.text, 'lxml')
+    
+    #parse the TOC
+    tag = soup.find('div', {'class' : 'toc'})
+    links = tag.findAll('a')
+    top_level = []
+    for link in links:
+        if re.match('\d\s.*', link.text):
+            top_level.append(link.text[2:])
+    
+    #pull all novels (young and old)
+    site = soup.find_all(['h2', 'h3', 'li', 'h4'])
+    novels = False
+    novel_list = []
+    for tag in site:
+        if tag.text == "Novels[]":
+            novels = True
+            continue
+        if (novels == True) and ( not (tag.text[:-2] in top_level)):
+            novel_list.append(tag.text)
+        elif (novels == True) and (tag.text[:-2] in top_level):
+            novels = False
 
-soup = BeautifulSoup(response.text, 'lxml')
+    
+    with open(config.working_dir + 'currenttotal_released.txt', "w") as clear:
+        clear.write("")
+    with open(config.working_dir + 'currenttotal_released.txt', "a+") as repopulate:
+        for novel in novel_list:
+            print(novel, file=repopulate)
+        
+    additional_novels = []
+    for novel in novel_list:
+        if novel not in running_list:
+            additional_novels.append(novel)
+    
+    removed_novels = []
+    for novel in running_list:
+        if novel not in novel_list:
+            removed_novels.append(novel)
 
-site = soup.find_all(['h2', 'h3', 'li', 'h4'])
-novels = False
-canon = False
-legends = False
-skip = False
-canon_novels = []
-legends_novels = []
-for tag in site:
-	if (not 'Canon' in tag.get_text()) and (not 'Legends' in tag.get_text()) and ('Edit' in tag.get_text()):
-		skip = True
-	else:
-		skip = False
-	if 'NovelsEdit' in tag.get_text():
-		novels = True
-	if 'CanonEdit' in tag.get_text():
-		canon = True
-	if 'LegendsEdit' in tag.get_text():
-		canon = False
-		legends = True
-	if novels and canon and (not skip) and (not tag.get_text().strip() == 'CanonEdit'):
-		if tag.get_text().strip():
-			canon_novels.append(tag.get_text().strip())
-	if novels and legends and (not skip) and (not tag.get_text().strip() == 'LegendsEdit'):
-		if tag.get_text().strip():
-			legends_novels.append(tag.get_text().strip())
-	if 'Short storiesEdit' in tag.get_text():
-		break
-
-if len(running_list) > 0 and os.path.exists(config.working_dir + "currenttotal.txt"):
-	os.remove(config.working_dir + "currenttotal.txt")
-
-
-new_old = open(config.working_dir + "currenttotal.txt", "a+")
-for c in canon_novels:
-	print(c, file = new_old)
-for c in legends_novels:
-	print(c, file = new_old)
-	
-
-canon_content_added = []
-legend_content_added = []
-for content in canon_novels:
-	if not content in running_list:
-		canon_content_added.append(content)
-for content in legends_novels:
-	if not content in running_list:
-		legend_content_added.append(content)
-
-content_removed = []
-for content in running_list:
-	if content:
-		if (not content in canon_novels) and (not content in legends_novels):
-			content_removed.append(content)
+    return additional_novels, removed_novels
 
 
-if len(canon_content_added) > 0 or len(legend_content_added) > 0 or len(content_removed) > 0:
-	#there has been a change
-	if len(canon_content_added) > 0:
-		book_body = ""
-		for book in canon_content_added:
-			book_body = book_body + "\r\n" + book
-		body = "There was Canon content added:\r\n"+book_body
-		send_mail(body)
-	if len(legend_content_added) > 0:
-		book_body = ""
-		for book in legend_content_added:
-			book_body = book_body + "\r\n" + book
-		body = "There was Legends content added\r\n"+book_body
-		send_mail(body)
-	if len(content_removed) > 0:
-		book_body = ""
-		for book in content_removed:
-			book_body = book_body + "\r\n" + book
-		body = "There was content removed\r\n"+book_body
-		send_mail(body)
+def parse_future_collection():
+    URL = "https://starwars.fandom.com/wiki/List_of_future_books"
+
+    running_list = file_to_list(config.working_dir + "currenttotal_unreleased.txt")
+
+    try:
+        response = requests.get(URL)
+    except:
+        send_error_mail("pulling the current collection website.")
+
+    soup = BeautifulSoup(response.text, 'lxml')
+    table = soup.find_all('tr')
+    upcoming_novel = []
+    for line in table:
+        if 'novel' in  line.get_text() or 'Novel' in  line.get_text() :
+            sections = line.find_all('td')
+            novel = "| "
+            for entry in sections:
+                novel = novel + re.sub('\n', '', entry.text) + " | "
+            novel = novel.strip()
+            upcoming_novel.append(novel)
+    
+    with open(config.working_dir + 'currenttotal_unreleased.txt', "w") as clear:
+        clear.write("")
+    with open(config.working_dir + 'currenttotal_unreleased.txt', "a+") as repopulate:
+        for novel in upcoming_novel:
+                print(novel, file=repopulate)
+        
+    additional_upcoming_novels = []
+    for novel in upcoming_novel:
+        if novel not in running_list:
+            additional_upcoming_novels.append(novel)
+    
+    removed_upcoming_novels = []
+    for novel in running_list:
+        if novel not in upcoming_novel:
+            removed_upcoming_novels.append(novel)
+    
+    return additional_upcoming_novels, removed_upcoming_novels        
+        
+    
+if __name__ == '__main__':
+    additional_novels, removed_novels = parse_current_collection()
+    additional_upcoming_novels, removed_upcoming_novels = parse_future_collection()
+    
+    if '' in additional_novels:
+        additional_novels.remove('')
+    if '' in removed_novels:
+        removed_novels.remove('')
+    if '' in additional_upcoming_novels:
+        additional_upcoming_novels.remove('')
+    if '' in removed_upcoming_novels:
+        removed_upcoming_novels.remove('')
+    
+    if len(additional_novels) > 0 or len(removed_novels) > 0 or len(additional_upcoming_novels) > 0 or len(removed_upcoming_novels) > 0:
+        #there has been a change
+        if len(additional_novels) > 0:
+            book_body = ""
+            for book in additional_novels:
+                book_body = book_body + re.sub('\[\]', '', book) + "\r\n"
+            body = "There were novels released!\r\n\r\n" + book_body
+            send_mail(body)
+        if len(removed_novels) > 0:
+            book_body = ""
+            for book in removed_novels:
+                book_body = book_body + re.sub('\[\]', '', book) + "\r\n"
+            body = "There were novels removed!\r\n\r\n" + book_body
+            send_mail(body)
+        if len(additional_upcoming_novels) > 0:
+            book_body = ""
+            for book in additional_upcoming_novels:
+                book_body = book_body + re.sub('\[\]', '', book) + "\r\n"
+            body = "There are new novels planned to be released!\r\n\r\n" + book_body
+            send_mail(body)
+        if len(removed_upcoming_novels) > 0:
+            book_body = ""
+            for book in removed_upcoming_novels:
+                book_body = book_body + re.sub('\[\]', '', book) + "\r\n"
+            body = "Some novels have been removed from the future book list!\r\n\r\n" + book_body
+            send_mail(body)
